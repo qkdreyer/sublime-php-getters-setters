@@ -12,7 +12,8 @@ from .user_templates import *
 
 
 def msg(msg):
-    print ("[PHP Getters and Setters] %s" % msg)
+    if Prefs.debug:
+        print ("[PHP Getters and Setters] %s" % msg)
 
 class Prefs:
     """
@@ -23,9 +24,6 @@ class Prefs:
         self.data = {}
 
     def get(self, name):
-        if (False == self.loaded):
-            self.load()
-
         return self.data[name]
 
     def load(self):
@@ -34,17 +32,22 @@ class Prefs:
 
         settings = sublime.load_settings('php-getters-setters.sublime-settings')
 
+        self.debug = settings.get('debug', False)
+
         self.data['typeHintIgnore'] = settings.get('type_hint_ignore')
         msg("ignored type hinting var types %s" % self.data['typeHintIgnore'])
 
         self.data['template'] = settings.get('template')
-        msg("template is  '%s'" % self.data['template'])
+        msg("template is %s" % self.data['template'])
 
         self.data['registerTemplates'] = settings.get('registerTemplates', [])
         msg("register extra user templates %s" % self.data['registerTemplates'])
 
         self.data['ignoreVisibility'] = settings.get('ignore_visibility', [])
-        msg("ignoring visibility to getters and setters")
+        msg("ignoring visibility to getters and setters: %s" % self.data['ignoreVisibility'])
+
+        self.data['ignoreIdSetter'] = settings.get('ignore_id_setter', False)
+        msg("ignoring id setter: %s" % self.data['ignoreIdSetter'])
 
         self.setterBeforeGetter = settings.get('setter_before_getter', False)
         msg("setterBeforeGetter is %s" % str(self.setterBeforeGetter))
@@ -272,6 +275,11 @@ class Parser(object):
                 commentEnd = n
                 break
 
+            elif '/**' in line and '*/' in line:
+                commentStart = n;
+                commentEnd = n + 1
+                break
+
             elif 0 == commentStart:
                 break
 
@@ -401,6 +409,9 @@ class Base(sublime_plugin.TextCommand):
             msg("function %s already present, skipping" % variable.getSetterFunctionName())
             return ''
 
+        if Prefs.get('ignoreIdSetter') and variable.getPartialFunctionName().lower() == 'id':
+            return ''
+
         template = TemplateManager.get(Prefs.get('template'))
         code = self.generateFunctionCode(template.setter, variable)
         # if type hinting is not to be show we get "( " instead of (
@@ -409,8 +420,9 @@ class Base(sublime_plugin.TextCommand):
         return code
 
     def writeAtEnd(self, edit, text):
-        lastPos = self.findLastBracket()
-        self.view.insert(edit, lastPos, text)
+        if len(text) > 0:
+            lastPos = self.findLastBracket()
+            self.view.insert(edit, lastPos, text)
 
     def isPhpSyntax(self):
         return re.search(".*\PHP.sublime-syntax", self.view.settings().get('syntax')) is not None
@@ -657,6 +669,7 @@ Prefs = Prefs()
 TemplateManager = TemplateManager()
 
 def plugin_loaded():
+    Prefs.load()
     TemplateManager.register(PSR2())
     TemplateManager.register(camelCase())
     TemplateManager.register(camelCaseFluent())
